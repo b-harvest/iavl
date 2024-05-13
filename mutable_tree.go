@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	log "cosmossdk.io/log"
 	dbm "github.com/cosmos/cosmos-db"
@@ -749,7 +750,9 @@ func (tree *MutableTree) SaveVersion() ([]byte, int64, error) {
 			return nil, version, err
 		}
 	}
+	tFormat := "15:04:05.000"
 	// save new nodes
+	tree.logger.Info(fmt.Sprintf("[%s]MutableTree.SaveVersion::save new nodes", time.Now().Format(tFormat)))
 	if tree.root == nil {
 		if err := tree.ndb.SaveEmptyRoot(version); err != nil {
 			return nil, 0, err
@@ -775,10 +778,13 @@ func (tree *MutableTree) SaveVersion() ([]byte, int64, error) {
 			}
 		}
 	}
+	tree.logger.Info(fmt.Sprintf("[%s]MutableTree.SaveVersion::done save new nodes", time.Now().Format(tFormat)))
 
+	tree.logger.Info(fmt.Sprintf("[%s]MutableTree.SaveVersion::call tree.ndb.Commit()", time.Now().Format(tFormat)))
 	if err := tree.ndb.Commit(); err != nil {
 		return nil, version, err
 	}
+	tree.logger.Info(fmt.Sprintf("[%s]MutableTree.SaveVersion::done tree.ndb.Commit()", time.Now().Format(tFormat)))
 
 	tree.ndb.resetLatestVersion(version)
 	tree.version = version
