@@ -151,6 +151,7 @@ func (t *ImmutableTree) Has(key []byte) (bool, error) {
 
 // Hash returns the root hash.
 func (t *ImmutableTree) Hash() []byte {
+	fmt.Printf("ImmutableTree.Hash():: tree.version: %v\n", t.version)
 	return t.root.hashWithCount(t.version + 1)
 }
 

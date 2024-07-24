@@ -7,10 +7,13 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"runtime"
+	"strings"
 
 	"github.com/cosmos/iavl/cache"
 
@@ -433,6 +436,7 @@ func (node *Node) _hash(version int64) []byte {
 		return nil
 	}
 	node.hash = h.Sum(nil)
+	fmt.Println("node.hash: ", hex.EncodeToString(node.hash))
 
 	return node.hash
 }
@@ -442,10 +446,31 @@ func (node *Node) _hash(version int64) []byte {
 // If the tree is empty (i.e. the node is nil), returns the hash of an empty input,
 // to conform with RFC-6962.
 func (node *Node) hashWithCount(version int64) []byte {
+	//if version == 10480453 {
+	//	// debug point
+	//	fmt.Println("")
+	//}
+	pc := make([]uintptr, 10)
+	n := runtime.Callers(2, pc)
+	frames := runtime.CallersFrames(pc[:n])
+
+	parentIsHash := false
+	frame, _ := frames.Next()
+	if strings.HasSuffix(frame.Function, "Hash") {
+		parentIsHash = true
+	}
 	if node == nil {
 		return sha256.New().Sum(nil)
 	}
 	if node.hash != nil {
+		if parentIsHash {
+			fmt.Printf("node.hash != nil, return hash: %s\n", hex.EncodeToString(node.hash))
+			if node.nodeKey != nil {
+				fmt.Printf("root node nodeKey.version: %v, nodeKey.nonce: %v\n", node.nodeKey.version, node.nodeKey.nonce)
+			} else {
+				fmt.Println("root node nodeKey does not exist yet")
+			}
+		}
 		return node.hash
 	}
 
@@ -456,7 +481,15 @@ func (node *Node) hashWithCount(version int64) []byte {
 		panic(err)
 	}
 	node.hash = h.Sum(nil)
-
+	if parentIsHash {
+		fmt.Printf("node.hash == nil, calc hash: %s\n", hex.EncodeToString(node.hash))
+		if node.nodeKey != nil {
+			fmt.Printf("root node nodeKey.version: %v, nodeKey.nonce: %v\n", node.nodeKey.version, node.nodeKey.nonce)
+		} else {
+			fmt.Println("root node nodeKey does not exist yet")
+		}
+	}
+	parentIsHash = false
 	return node.hash
 }
 
@@ -501,6 +534,22 @@ func (node *Node) validate() error {
 // Writes the node's hash to the given io.Writer. This function expects
 // child hashes to be already set.
 func (node *Node) writeHashBytes(w io.Writer, version int64) error {
+	crisis := false
+	if node.isLeaf() {
+		k := node.key
+		if k != nil {
+			expectedKey := []uint8{0x1}
+			expectedVal := []uint8{
+				0xA, 0x6, 0x61, 0x63, 0x61, 0x6E, 0x74, 0x6F, 0x12, 0x4,
+				0x31, 0x30, 0x30, 0x30,
+			}
+			if bytes.Equal(k, expectedKey) && bytes.Equal(node.value, expectedVal) {
+				fmt.Println("crisis module's value")
+				crisis = true
+			}
+		}
+	}
+
 	err := encoding.EncodeVarint(w, int64(node.subtreeHeight))
 	if err != nil {
 		return fmt.Errorf("writing height, %w", err)
@@ -530,6 +579,11 @@ func (node *Node) writeHashBytes(w io.Writer, version int64) error {
 		if err != nil {
 			return fmt.Errorf("writing value, %w", err)
 		}
+		if crisis {
+			//fmt.Printf("node.nodeKey.version: %v, key: %s, value: %s, valueHash: %s\n", version, hex.EncodeToString(node.key), hex.EncodeToString(node.value), hex.EncodeToString(valueHash[:]))
+		}
+		//fmt.Printf("node.nodeKey.version: %v, key: %s, valueHash: %s\n", version, hex.EncodeToString(node.key), hex.EncodeToString(valueHash[:]))
+		// nodeHash
 	} else {
 		if node.leftNode == nil || node.rightNode == nil {
 			return ErrEmptyChild

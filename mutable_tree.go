@@ -731,12 +731,14 @@ func (tree *MutableTree) SaveVersion() ([]byte, int64, error) {
 	}
 	// save new nodes
 	if tree.root == nil {
+		fmt.Println("SaveVersion:: root is nil, save empty root")
 		if err := tree.ndb.SaveEmptyRoot(version); err != nil {
 			return nil, 0, err
 		}
 	} else {
 		if tree.root.nodeKey != nil {
 			// it means there are no updated nodes
+			fmt.Printf("SaveVersion:: root exists, nodeKey != nil (version: %v, nonce %v)\n", tree.root.nodeKey.version, tree.root.nodeKey.nonce)
 			if err := tree.ndb.SaveRoot(version, tree.root.nodeKey); err != nil {
 				return nil, 0, err
 			}
@@ -750,6 +752,7 @@ func (tree *MutableTree) SaveVersion() ([]byte, int64, error) {
 				}
 			}
 		} else {
+			fmt.Println("SaveVersion:: root exists, but nodeKey == nil")
 			if err := tree.saveNewNodes(version); err != nil {
 				return nil, 0, err
 			}
