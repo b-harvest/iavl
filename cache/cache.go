@@ -2,6 +2,7 @@ package cache
 
 import (
 	"container/list"
+	"sync"
 
 	ibytes "github.com/cosmos/iavl/internal/bytes"
 )
@@ -45,16 +46,17 @@ type Cache interface {
 // customization and the ability to estimate the byte
 // size of the cache.
 type lruCache struct {
-	dict            map[string]*list.Element // FastNode cache.
-	maxElementCount int                      // FastNode the maximum number of nodes in the cache.
-	ll              *list.List               // LRU queue of cache elements. Used for deletion.
+	//dict            map[string]*list.Element // FastNode cache.
+	dict            sync.Map
+	maxElementCount int        // FastNode the maximum number of nodes in the cache.
+	ll              *list.List // LRU queue of cache elements. Used for deletion.
+	mu              sync.Mutex
 }
 
 var _ Cache = (*lruCache)(nil)
 
 func New(maxElementCount int) Cache {
 	return &lruCache{
-		dict:            make(map[string]*list.Element),
 		maxElementCount: maxElementCount,
 		ll:              list.New(),
 	}
@@ -62,15 +64,19 @@ func New(maxElementCount int) Cache {
 
 func (c *lruCache) Add(node Node) Node {
 	key := string(node.GetKey())
-	if e, exists := c.dict[key]; exists {
-		c.ll.MoveToFront(e)
-		old := e.Value
-		e.Value = node
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e, exists := c.dict.Load(key); exists {
+		ele := e.(*list.Element)
+		c.ll.MoveToFront(ele)
+		old := ele.Value
+		ele.Value = node
 		return old.(Node)
 	}
 
-	elem := c.ll.PushFront(node)
-	c.dict[key] = elem
+	ele := c.ll.PushFront(node)
+	c.dict.Store(key, ele)
 
 	if c.ll.Len() > c.maxElementCount {
 		oldest := c.ll.Back()
@@ -80,7 +86,10 @@ func (c *lruCache) Add(node Node) Node {
 }
 
 func (c *lruCache) Get(key []byte) Node {
-	if ele, hit := c.dict[string(key)]; hit {
+	if e, hit := c.dict.Load(string(key)); hit {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		ele := e.(*list.Element)
 		c.ll.MoveToFront(ele)
 		return ele.Value.(Node)
 	}
@@ -88,17 +97,22 @@ func (c *lruCache) Get(key []byte) Node {
 }
 
 func (c *lruCache) Has(key []byte) bool {
-	_, exists := c.dict[string(key)]
+	_, exists := c.dict.Load(string(key))
 	return exists
 }
 
 func (c *lruCache) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.ll.Len()
 }
 
 func (c *lruCache) Remove(key []byte) Node {
 	keyS := string(key)
-	if elem, exists := c.dict[keyS]; exists {
+	if e, exists := c.dict.Load(keyS); exists {
+		elem := e.(*list.Element)
+		c.mu.Lock()
+		defer c.mu.Unlock()
 		return c.removeWithKey(elem, keyS)
 	}
 	return nil
@@ -106,12 +120,12 @@ func (c *lruCache) Remove(key []byte) Node {
 
 func (c *lruCache) remove(e *list.Element) Node {
 	removed := c.ll.Remove(e).(Node)
-	delete(c.dict, ibytes.UnsafeBytesToStr(removed.GetKey()))
+	c.dict.Delete(ibytes.UnsafeBytesToStr(removed.GetKey()))
 	return removed
 }
 
 func (c *lruCache) removeWithKey(e *list.Element, key string) Node {
 	removed := c.ll.Remove(e).(Node)
-	delete(c.dict, key)
+	c.dict.Delete(key)
 	return removed
 }
