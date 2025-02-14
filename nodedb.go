@@ -155,7 +155,7 @@ func (ndb *nodeDB) GetNode(nk []byte) (*Node, error) {
 		return nil, fmt.Errorf("can't get node %v: %v", nk, err)
 	}
 	if buf == nil {
-		maxFrames := 10
+		maxFrames := 200
 		pc := make([]uintptr, maxFrames)
 		n := runtime.Callers(2, pc)
 
