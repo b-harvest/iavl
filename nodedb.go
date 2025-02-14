@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -154,6 +155,20 @@ func (ndb *nodeDB) GetNode(nk []byte) (*Node, error) {
 		return nil, fmt.Errorf("can't get node %v: %v", nk, err)
 	}
 	if buf == nil {
+		maxFrames := 10
+		pc := make([]uintptr, maxFrames)
+		n := runtime.Callers(2, pc)
+
+		frames := runtime.CallersFrames(pc[:n])
+		fmt.Println("Call Stack:")
+
+		for i := 0; i < maxFrames; i++ {
+			frame, more := frames.Next()
+			fmt.Printf("%d: %s\n\t%s:%d\n", i+1, frame.Function, frame.File, frame.Line)
+			if !more {
+				break
+			}
+		}
 		return nil, fmt.Errorf("Value missing for key %v corresponding to nodeKey %x", nk, nodeKey)
 	}
 
