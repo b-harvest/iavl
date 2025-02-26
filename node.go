@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sync"
 
 	"github.com/cosmos/iavl/cache"
 
@@ -449,29 +450,45 @@ func (node *Node) hashWithCount(version int64) []byte {
 		return node.hash
 	}
 
-	stack := []*Node{}              // Stack for iterative DFS traversal
-	visited := make(map[*Node]bool) // Map to track visited nodes
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	stack := []*Node{}
+	visited := make(map[*Node]bool)
+	hashMap := sync.Map{}
 
-	stack = append(stack, node) // Push the root node onto the stack
+	stack = append(stack, node)
+
+	workerPool := make(chan struct{}, 8) // Limit to 8 concurrent workers
 
 	for len(stack) > 0 {
 		cur := stack[len(stack)-1]
 
-		// If the node has already been visited, compute its hash and pop it
 		if visited[cur] {
-			stack = stack[:len(stack)-1] // Pop the node from the stack
+			stack = stack[:len(stack)-1]
 
-			h := sha256.New()
-			if err := cur.writeHashBytes(h, version); err != nil {
-				panic(err)
-			}
-			cur.hash = h.Sum(nil)
+			wg.Add(1)
+			workerPool <- struct{}{} // Acquire worker slot
+			go func(n *Node) {
+				defer wg.Done()
+				defer func() { <-workerPool }() // Release worker slot
+
+				h := sha256.New()
+				if err := n.writeHashBytes(h, version); err != nil {
+					panic(err)
+				}
+				hash := h.Sum(nil)
+
+				mu.Lock()
+				n.hash = hash
+				hashMap.Store(n, hash)
+				mu.Unlock()
+			}(cur)
+
 			continue
 		}
 
-		visited[cur] = true // Mark the current node as visited
+		visited[cur] = true
 
-		// Push the right and left children onto the stack if they exist and haven't been hashed yet
 		if cur.rightNode != nil && cur.rightNode.hash == nil {
 			stack = append(stack, cur.rightNode)
 		}
@@ -480,6 +497,7 @@ func (node *Node) hashWithCount(version int64) []byte {
 		}
 	}
 
+	wg.Wait()
 	return node.hash
 }
 
