@@ -449,13 +449,36 @@ func (node *Node) hashWithCount(version int64) []byte {
 		return node.hash
 	}
 
-	h := sha256.New()
-	if err := node.writeHashBytesRecursively(h, version); err != nil {
-		// writeHashBytesRecursively doesn't return an error unless h.Write does,
-		// and hash.Hash.Write doesn't.
-		panic(err)
+	stack := []*Node{}              // Stack for iterative DFS traversal
+	visited := make(map[*Node]bool) // Map to track visited nodes
+
+	stack = append(stack, node) // Push the root node onto the stack
+
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+
+		// If the node has already been visited, compute its hash and pop it
+		if visited[cur] {
+			stack = stack[:len(stack)-1] // Pop the node from the stack
+
+			h := sha256.New()
+			if err := cur.writeHashBytes(h, version); err != nil {
+				panic(err)
+			}
+			cur.hash = h.Sum(nil)
+			continue
+		}
+
+		visited[cur] = true // Mark the current node as visited
+
+		// Push the right and left children onto the stack if they exist and haven't been hashed yet
+		if cur.rightNode != nil && cur.rightNode.hash == nil {
+			stack = append(stack, cur.rightNode)
+		}
+		if cur.leftNode != nil && cur.leftNode.hash == nil {
+			stack = append(stack, cur.leftNode)
+		}
 	}
-	node.hash = h.Sum(nil)
 
 	return node.hash
 }
